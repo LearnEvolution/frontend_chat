@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:3000/api", // backend rodando no Termux na porta 3000
+  baseURL: "https://backend-chat-fcvm.onrender.com/api", // backend rodando no Termux na porta 3000
   timeout: 10000,
 });
 
