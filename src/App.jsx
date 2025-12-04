@@ -40,3 +40,83 @@ const res = await api.post("/auth/register", { name, email, password });
     setName("");
     setEmail("");
     setPassword("");
+  } else {
+    alert("Erro ao cadastrar!");
+  }
+} catch (err) {
+  console.log(err);
+  alert("Falha na conexão com o servidor.");
+}
+
+};
+
+// Tela de login ou cadastro
+if (!token) {
+return (
+<div style={{ padding: 30, color: "white" }}>
+<h1>{isRegister ? "Cadastro" : "Login"}</h1>
+
+    {isRegister && (
+      <input
+        type="text"
+        placeholder="Nome"
+        style={{ display: "block", marginBottom: 10, width: "100%" }}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+    )}
+
+    <input
+      type="email"
+      placeholder="Email"
+      style={{ display: "block", marginBottom: 10, width: "100%" }}
+      value={email}
+      onChange={(e) => setEmail(e.target.value)}
+    />
+
+    <input
+      type="password"
+      placeholder="Senha"
+      style={{ display: "block", marginBottom: 10, width: "100%" }}
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+    />
+
+    <button onClick={isRegister ? handleRegister : handleLogin}>
+      {isRegister ? "Cadastrar" : "Entrar"}
+    </button>
+
+    <p style={{ marginTop: 10 }}>
+      {isRegister ? "Já tem conta?" : "Não tem conta?"}{" "}
+      <span
+        style={{ color: "lightblue", cursor: "pointer" }}
+        onClick={() => setIsRegister(!isRegister)}
+      >
+        {isRegister ? "Login" : "Cadastre-se"}
+      </span>
+    </p>
+  </div>
+);
+
+}
+
+// Tela quando está logado
+return (
+<div style={{ padding: 30, color: "white" }}>
+<h1>Chat conectado! 🔥</h1>
+<p>Bem-vindo, {user?.name || "usuário"}!</p>
+<p>Token salvo no navegador!</p>
+<button
+onClick={() => {
+localStorage.removeItem("token");
+setToken("");
+setUser(null);
+}}
+>
+Sair
+</button>
+</div>
+);
+}
+
+export default App;
