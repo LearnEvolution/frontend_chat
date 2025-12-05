@@ -1,12 +1,14 @@
+
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    dedupe: ['axios'] // Garante que axios será incluído no bundle
+    dedupe: ['axios']
   },
   optimizeDeps: {
-    include: ['axios'] // Força Vite a otimizar e incluir axios
+    include: ['axios', 'socket.io-client'] // inclui socket.io-client na otimização
   }
 })
