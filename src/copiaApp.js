@@ -3,31 +3,34 @@ import { api, API_URL } from "./services/api";
 import { io } from "socket.io-client";
 
 export default function App() {
-const [phase, setPhase] = useState("auth");
+const [phase, setPhase] = useState("auth"); // "auth" ou "chat"
 const [isRegister, setIsRegister] = useState(false);
 
+// auth fields
 const [name, setName] = useState("");
 const [email, setEmail] = useState("");
 const [password, setPassword] = useState("");
 
+// user state
 const [token, setToken] = useState(localStorage.getItem("token") || "");
 const [user, setUser] = useState(() => {
 const raw = localStorage.getItem("user");
 return raw ? JSON.parse(raw) : null;
 });
 
+// chat state
 const [messages, setMessages] = useState([]);
 const [text, setText] = useState("");
 const socketRef = useRef(null);
 const messagesDivRef = useRef(null);
 
+// connect socket when token becomes available
 useEffect(() => {
 if (!token) return;
 
 const s = io(API_URL, {
   auth: { token },
   transports: ["websocket"],
-  path: "/socket.io/",
   autoConnect: true,
 });
 
@@ -62,12 +65,14 @@ return () => {
 
 }, [token]);
 
+// If token+user present (from localStorage), go to chat
 useEffect(() => {
 if (token && user) {
 setPhase("chat");
 }
 }, [token, user]);
 
+// Register
 const handleRegister = async () => {
 try {
 if (!name.trim() || !email.trim() || !password) {
@@ -89,6 +94,7 @@ alert(err.response?.data?.error || err.response?.data?.message || "Erro no cadas
 }
 };
 
+// Login
 const handleLogin = async () => {
 try {
 if (!email.trim() || !password) return alert("Preencha email e senha.");
@@ -115,6 +121,7 @@ if (!email.trim() || !password) return alert("Preencha email e senha.");
 
 };
 
+// Logout
 const handleLogout = () => {
 if (socketRef.current) {
 socketRef.current.disconnect();
@@ -128,6 +135,7 @@ setMessages([]);
 setPhase("auth");
 };
 
+// Send message
 const handleSend = () => {
 if (!text.trim()) return;
 if (!socketRef.current || !socketRef.current.connected) {
@@ -141,12 +149,13 @@ setText("");
 
 setTimeout(() => {
   if (messagesDivRef.current) {
-    messagesDivRef.current.scrollTop = messagesDivRef.current.scrollHeight;
+    messagesDivRefRef.current.scrollTop = messagesDivRef.current.scrollHeight;
   }
 }, 50);
 
 };
 
+// UI — AUTH
 if (phase === "auth") {
 return (
 <div style={{ padding: 20, color: "#fff", maxWidth: 640, margin: "20px auto", fontFamily: "Arial, sans-serif" }}>
@@ -197,6 +206,7 @@ return (
 
 }
 
+// UI — CHAT
 return (
 <div style={{ padding: 20, color: "#fff", maxWidth: 900, margin: "10px auto", fontFamily: "Arial, sans-serif" }}>
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
