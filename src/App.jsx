@@ -1,97 +1,44 @@
 import { useState, useEffect } from "react";
-import { api, socket } from "./services/api";
+import { io } from "socket.io-client";
 
-function App() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [token, setToken] = useState(localStorage.getItem("token") || "");
-  const [user, setUser] = useState(null);
-  const [isRegister, setIsRegister] = useState(false);
+const socket = io("https://backend-chat-fcvm.onrender.com", {
+  transports: ["websocket"],
+});
+
+export default function App() {
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
+  const [txt, setTxt] = useState("");
 
   useEffect(() => {
-    if (token) {
-      socket.on("connect", () => console.log("🔌 Socket conectado:", socket.id));
-      socket.on("private_message", (msg) => setMessages((prev) => [...prev, msg]));
-      socket.on("disconnect", () => console.log("❌ Socket desconectado"));
-    }
+    socket.on("message", (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
 
-    return () => socket.off("private_message");
-  }, [token]);
+    return () => socket.off("message");
+  }, []);
 
-  const handleLogin = async () => {
-    try {
-      const res = await api.post("/auth/login", { email, password });
-      if (res.data.token) {
-        localStorage.setItem("token", res.data.token);
-        setToken(res.data.token);
-        setUser(res.data.user);
-        alert("Login feito com sucesso!");
-      }
-    } catch {
-      alert("Falha na conexão com o servidor ou credenciais inválidas.");
-    }
-  };
-
-  const handleRegister = async () => {
-    try {
-      const res = await api.post("/auth/register", { name, email, password });
-      if (res.data.user) {
-        alert("Cadastro realizado com sucesso! Faça login.");
-        setIsRegister(false);
-      }
-    } catch {
-      alert("Falha na conexão com o servidor ou email já cadastrado.");
-    }
-  };
-
-  const sendMessage = () => {
-    if (newMessage.trim()) {
-      socket.emit("private_message", { from: user?._id, text: newMessage });
-      setNewMessage("");
-    }
-  };
-
-  if (!token) {
-    return (
-      <div style={{ padding: 30, color: "white" }}>
-        <h1>{isRegister ? "Cadastro" : "Login"}</h1>
-        {isRegister && <input placeholder="Nome" value={name} onChange={(e) => setName(e.target.value)} />}
-        <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <button onClick={isRegister ? handleRegister : handleLogin}>
-          {isRegister ? "Cadastrar" : "Entrar"}
-        </button>
-        <p>
-          {isRegister ? "Já tem conta?" : "Não tem conta?"}
-          <span style={{ color: "lightblue", cursor: "pointer" }} onClick={() => setIsRegister(!isRegister)}>
-            {isRegister ? "Login" : "Cadastre-se"}
-          </span>
-        </p>
-      </div>
-    );
+  function sendMsg() {
+    if (txt.trim() === "") return;
+    socket.emit("message", txt);
+    setTxt("");
   }
 
   return (
-    <div style={{ padding: 30, color: "white" }}>
-      <h1>Chat conectado! 🔥</h1>
-      <p>Bem-vindo, {user?.name || "usuário"}!</p>
-      <input placeholder="Digite a mensagem..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
-      <button onClick={sendMessage}>Enviar</button>
-      <div>
-        {messages.map((m, idx) => (
-          <p key={idx}>
-            <strong>{m.from}:</strong> {m.text}
-          </p>
+    <div>
+      <h1>Chat Online</h1>
+
+      <div style={{ height: 200, border: "1px solid #999", padding: 10 }}>
+        {messages.map((m, i) => (
+          <p key={i}>{m}</p>
         ))}
       </div>
-      <button onClick={() => { localStorage.removeItem("token"); setToken(""); setUser(null); setMessages([]); }}>
-        Sair
-      </button>
+
+      <input
+        value={txt}
+        onChange={(e) => setTxt(e.target.value)}
+        placeholder="Digite..."
+      />
+      <button onClick={sendMsg}>Enviar</button>
     </div>
   );
 }
-
-export default App;
