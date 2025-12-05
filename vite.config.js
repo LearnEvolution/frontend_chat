@@ -1,14 +1,18 @@
 
-
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    dedupe: ['axios']
-  },
   optimizeDeps: {
-    include: ['axios', 'socket.io-client'] // inclui socket.io-client na otimização
-  }
-})
+    include: ["socket.io-client"], // força o Vite a otimizar esse pacote
+  },
+  build: {
+    rollupOptions: {
+      external: [], // garante que não seja externalizado
+    },
+    commonjsOptions: {
+      include: [/socket.io-client/, /node_modules/],
+    },
+  },
+});
