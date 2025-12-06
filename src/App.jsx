@@ -1,124 +1,165 @@
-import React, { useState } from "react";
+// src/App.jsx
+import React, { useEffect, useState, useRef } from "react";
 import { login, getUsers } from "./services/api";
 import {
-connectSocket,
-sendPrivateMessage,
+  connectSocket,
+  sendPrivateMessage,
+  getSocket,
+  disconnectSocket,
 } from "./services/socket";
 
 export default function App() {
-const [email, setEmail] = useState("");
-const [senha, setSenha] = useState("");
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [users, setUsers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [text, setText] = useState("");
+  const messagesRef = useRef();
 
-const [user, setUser] = useState(null);
-const [users, setUsers] = useState([]);
-const [messages, setMessages] = useState([]);
-const [selectedUser, setSelectedUser] = useState(null);
-const [text, setText] = useState("");
+  // ao token mudar, conecta socket
+  useEffect(() => {
+    if (!token) return;
 
-async function handleLogin() {
-const res = await login(email, senha);
-setUser(res.user);
+    const s = connectSocket(token);
 
-const s = connectSocket(res.token);
+    s.on("connect", () => console.log("🔌 socket conectado", s.id));
+    s.on("private_message", (msg) => {
+      // msg vem do backend (objeto salvo no DB)
+      setMessages((prev) => [...prev, msg]);
+      setTimeout(() => {
+        if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+      }, 50);
+    });
+    s.on("disconnect", (r) => console.log("❌ socket desconectado", r));
+    s.on("connect_error", (err) => console.warn("Erro conexão socket:", err?.message || err));
 
-s.on("private_message", (msg) => {
-  setMessages((prev) => [...prev, msg]);
-});
+    return () => {
+      try {
+        s.off("private_message");
+        s.disconnect();
+      } catch (e) {}
+    };
+  }, [token]);
 
-loadUsers(res.token);
+  // se já tenho token + user no localStorage, re-hidrata
+  useEffect(() => {
+    const rawUser = localStorage.getItem("user");
+    if (rawUser) setUser(JSON.parse(rawUser));
+    const tk = localStorage.getItem("token");
+    if (tk) setToken(tk);
+  }, []);
 
-}
+  // Função de login de exemplo (você pode trocar por formulário depois)
+  async function handleLoginTemp() {
+    try {
+      const res = await login("teste@teste.com", "123456"); // só pra TESTE
+      // res = { token, user }
+      localStorage.setItem("token", res.token);
+      localStorage.setItem("user", JSON.stringify(res.user));
+      setToken(res.token);
+      setUser(res.user);
 
-async function loadUsers(token) {
-const list = await getUsers(token);
-setUsers(list.filter((u) => u._id !== user._id));
-}
+      // carregar lista de usuários (exceto eu)
+      const list = await getUsers(res.token);
+      setUsers(list);
+    } catch (err) {
+      console.error(err);
+      alert("Erro no login de teste: " + (err.response?.data?.message || err.message));
+    }
+  }
 
-function handleSend() {
-if (!selectedUser) return alert("Selecione um usuário!");
-if (!text.trim()) return;
+  async function handleLoadUsers() {
+    if (!token) return alert("Faça login primeiro");
+    try {
+      const list = await getUsers(token);
+      setUsers(list);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao carregar usuários");
+    }
+  }
 
-sendPrivateMessage(selectedUser._id, text);
-setText("");
+  function handleSelectUser(u) {
+    setSelectedUser(u);
+    // opcional: você pode limpar mensagens ou carregar histórico via /messages API
+  }
 
-}
+  function handleSend() {
+    if (!selectedUser) return alert("Selecione um usuário");
+    if (!text.trim()) return;
 
-return (
-<div style={{ padding: 20 }}>
-<h1>Chat</h1>
+    // envia { to, text } — backend grava e emite para o destinatário
+    const ok = sendPrivateMessage(selectedUser._id, text);
+    if (!ok) return alert("Socket desconectado — faça login novamente.");
+    // opcional: mostrar localmente (backend também emitirá para você)
+    setMessages((prev) => [...prev, { from: user._id, to: selectedUser._id, text }]);
+    setText("");
+    setTimeout(() => { if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight; }, 50);
+  }
 
-  {!user && (
-    <div>
-      <input
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        style={{ padding: 10, display: "block", marginBottom: 10 }}
-      />
+  function handleLogout() {
+    disconnectSocket();
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken(""); setUser(null); setUsers([]); setMessages([]); setSelectedUser(null);
+  }
 
-      <input
-        placeholder="Senha"
-        value={senha}
-        type="password"
-        onChange={(e) => setSenha(e.target.value)}
-        style={{ padding: 10, display: "block", marginBottom: 10 }}
-      />
+  return (
+    <div style={{ padding: 20 }}>
+      <h1>Chat Privado</h1>
 
-      <button onClick={handleLogin}>Entrar</button>
-    </div>
-  )}
-
-  {user && (
-    <div>
-      <h2>Usuários</h2>
-
-      {users.map((u) => (
-        <div
-          key={u._id}
-          style={{
-            padding: 10,
-            marginBottom: 5,
-            background: selectedUser?._id === u._id ? "#ccc" : "#eee",
-            cursor: "pointer",
-          }}
-          onClick={() => setSelectedUser(u)}
-        >
-          {u.name}
+      {!user ? (
+        <div>
+          <p>Você não está logado.</p>
+          <button onClick={handleLoginTemp}>Login de teste (teste@teste.com / 123456)</button>
         </div>
-      ))}
-
-      <h2>Chat</h2>
-
-      <div
-        style={{
-          width: "100%",
-          height: 200,
-          border: "1px solid #aaa",
-          padding: 10,
-          overflowY: "auto",
-          marginBottom: 10,
-        }}
-      >
-        {messages.map((m, i) => (
-          <div key={i}>
-            <b>{m.from === user._id ? "Você:" : "Ele:"}</b> {m.text}
+      ) : (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              Logado como: <strong>{user.name} ({user.email})</strong>
+            </div>
+            <div>
+              <button onClick={handleLoadUsers} style={{ marginRight: 8 }}>Recarregar usuários</button>
+              <button onClick={handleLogout}>Sair</button>
+            </div>
           </div>
-        ))}
-      </div>
 
-      <input
-        style={{ width: "80%", padding: 10 }}
-        placeholder="Mensagem..."
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
+          <div style={{ display: "flex", gap: 20, marginTop: 20 }}>
+            <div style={{ width: 220 }}>
+              <h3>Usuários</h3>
+              <div style={{ border: "1px solid #ddd", padding: 8 }}>
+                {users.length === 0 && <div style={{ color: "#666" }}>Nenhum usuário (clique Recarregar)</div>}
+                {users.map((u) => (
+                  <div key={u._id} onClick={() => handleSelectUser(u)} style={{ padding: 8, cursor: "pointer", background: selectedUser?._id === u._id ? "#eef" : "transparent" }}>
+                    {u.name} <br/><small>{u.email}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-      <button onClick={handleSend} style={{ marginLeft: 10, padding: 10 }}>
-        Enviar
-      </button>
+            <div style={{ flex: 1 }}>
+              <h3>Chat{selectedUser ? ` com ${selectedUser.name}` : ""}</h3>
+
+              <div ref={messagesRef} style={{ height: 300, overflowY: "auto", border: "1px solid #ddd", padding: 10 }}>
+                {messages.map((m, i) => (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: "#555" }}>{m.from === user._id ? "Você" : (m.fromName || m.from)}</div>
+                    <div>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <input value={text} onChange={e => setText(e.target.value)} style={{ flex: 1, padding: 8 }} placeholder={selectedUser ? "Digite a mensagem..." : "Selecione um usuário primeiro"} />
+                <button onClick={handleSend}>Enviar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )}
-</div>
-
-);
+  );
 }
+
