@@ -1,198 +1,235 @@
-import React, { useEffect, useState, useRef } from "react";
-import { getUsers } from "./services/api";
-import Login from "./Login";
+import { useEffect, useState } from "react";
+import io from "socket.io-client";
 import {
-connectSocket,
-sendPrivateMessage,
-disconnectSocket,
-} from "./services/socket";
+  login,
+  register,
+  getUsers,
+  getMessages,
+  sendMessage,
+} from "./services/api";
+
+const socket = io("https://backend-chat-fcvm.onrender.com");
 
 export default function App() {
-const [user, setUser] = useState(null);
-const [token, setToken] = useState(localStorage.getItem("token") || "");
-const [users, setUsers] = useState([]);
-const [messages, setMessages] = useState([]);
-const [selectedUser, setSelectedUser] = useState(null);
-const [text, setText] = useState("");
-const messagesRef = useRef();
+  const [page, setPage] = useState("login"); // login | register | chat
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
-// Conexão socket
-useEffect(() => {
-if (!token) return;
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState("");
 
-const s = connectSocket(token);
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
 
-s.on("connect", () => console.log("🔌 socket conectado", s.id));
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
 
-s.on("private_message", (msg) => {
-  setMessages((prev) => [...prev, msg]);
-  setTimeout(() => {
-    if (messagesRef.current)
-      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
-  }, 50);
-});
+  // CARREGAR USUÁRIOS APÓS LOGIN
+  useEffect(() => {
+    if (!token) return;
 
-return () => {
-  try {
-    s.off("private_message");
-    s.disconnect();
-  } catch {}
-};
+    async function loadUsers() {
+      const data = await getUsers(token);
+      setUsers(data);
+    }
 
-}, [token]);
+    loadUsers();
+  }, [token]);
 
-// Carrega user/token ao abrir o app
-useEffect(() => {
-const rawUser = localStorage.getItem("user");
-if (rawUser) setUser(JSON.parse(rawUser));
-const tk = localStorage.getItem("token");
-if (tk) setToken(tk);
-}, []);
+  // RECEBER MENSAGENS EM TEMPO REAL
+  useEffect(() => {
+    socket.on("receiveMessage", (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
 
-async function handleLoadUsers() {
-if (!token) return alert("Faça login primeiro");
-try {
-const list = await getUsers(token);
-setUsers(list);
-} catch (err) {
-console.error(err);
-alert("Erro ao carregar usuários");
-}
-}
+    return () => socket.off("receiveMessage");
+  }, []);
 
-function handleSelectUser(u) {
-setSelectedUser(u);
-}
+  // LOGIN
+  async function handleLogin(e) {
+    e.preventDefault();
+    try {
+      const res = await login(email, password);
+      setToken(res.data.token);
+      setUser(res.data.user);
+      setPage("chat");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao fazer login");
+    }
+  }
 
-function handleSend() {
-if (!selectedUser) return alert("Selecione um usuário");
-if (!text.trim()) return;
+  // REGISTER
+  async function handleRegister(e) {
+    e.preventDefault();
+    try {
+      await register(name, email, password);
+      alert("Cadastro realizado! Faça login.");
+      setPage("login");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao cadastrar");
+    }
+  }
 
-sendPrivateMessage(selectedUser._id, text);
+  // SELECIONAR USUÁRIO E CARREGAR HISTÓRICO
+  async function handleSelectUser(u) {
+    setSelectedUser(u);
 
-setMessages((prev) => [
-  ...prev,
-  { from: user._id, to: selectedUser._id, text },
-]);
+    if (!token || !user) return;
 
-setText("");
+    try {
+      const history = await getMessages(token, user._id, u._id);
+      setMessages(history);
+    } catch (err) {
+      console.error("Erro ao carregar histórico:", err);
+    }
+  }
 
-setTimeout(() => {
-  if (messagesRef.current)
-    messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
-}, 50);
+  // ENVIAR MENSAGEM
+  async function handleSend() {
+    if (!message.trim()) return;
+    if (!selectedUser) return;
 
-}
+    try {
+      await sendMessage(token, selectedUser._id, message);
 
-function handleLogout() {
-disconnectSocket();
-localStorage.removeItem("token");
-localStorage.removeItem("user");
-setToken("");
-setUser(null);
-setUsers([]);
-setMessages([]);
-setSelectedUser(null);
-}
+      socket.emit("sendMessage", {
+        from: user._id,
+        to: selectedUser._id,
+        message,
+      });
 
-// ============================
-//        TELA DE LOGIN
-// ============================
-if (!user) {
-return <Login onLogin={(u) => { setUser(u); setToken(localStorage.getItem("token")); }} />;
-}
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: user._id,
+          to: selectedUser._id,
+          message,
+        },
+      ]);
 
-// ============================
-//         TELA PRINCIPAL
-// ============================
-return (
-<div style={{ padding: 20 }}>
-<h1>Chat Privado</h1>
+      setMessage("");
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-    }}
-  >
-    <div>
-      Logado como: <strong>{user.name} ({user.email})</strong>
-    </div>
-    <div>
-      <button onClick={handleLoadUsers} style={{ marginRight: 8 }}>
-        Recarregar usuários
-      </button>
-      <button onClick={handleLogout}>Sair</button>
-    </div>
-  </div>
+  // TELAS
 
-  <div style={{ display: "flex", gap: 20, marginTop: 20 }}>
-    <div style={{ width: 220 }}>
-      <h3>Usuários</h3>
-      <div style={{ border: "1px solid #ddd", padding: 8 }}>
-        {users.length === 0 && (
-          <div style={{ color: "#666" }}>
-            Nenhum usuário (clique Recarregar)
-          </div>
-        )}
+  if (page === "login") {
+    return (
+      <div>
+        <h2>Login</h2>
+        <form onSubmit={handleLogin}>
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            placeholder="Senha"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit">Entrar</button>
+        </form>
+        <button onClick={() => setPage("register")}>Criar conta</button>
+      </div>
+    );
+  }
 
+  if (page === "register") {
+    return (
+      <div>
+        <h2>Cadastro</h2>
+        <form onSubmit={handleRegister}>
+          <input
+            placeholder="Nome"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <input
+            placeholder="Senha"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <button type="submit">Cadastrar</button>
+        </form>
+
+        <button onClick={() => setPage("login")}>Voltar</button>
+      </div>
+    );
+  }
+
+  // TELA DE CHAT
+  return (
+    <div style={{ display: "flex", gap: 20 }}>
+      {/* LISTA DE USUÁRIOS */}
+      <div>
+        <h3>Usuários</h3>
         {users.map((u) => (
           <div
             key={u._id}
-            onClick={() => handleSelectUser(u)}
             style={{
-              padding: 8,
+              padding: 10,
               cursor: "pointer",
               background:
-                selectedUser?._id === u._id ? "#eef" : "transparent",
+                selectedUser?._id === u._id ? "#ddd" : "transparent",
             }}
+            onClick={() => handleSelectUser(u)}
           >
-            {u.name} <br />
-            <small>{u.email}</small>
+            {u.name}
           </div>
         ))}
       </div>
-    </div>
 
-    <div style={{ flex: 1 }}>
-      <h3>Chat {selectedUser ? `com ${selectedUser.name}` : ""}</h3>
+      {/* CHAT */}
+      <div style={{ flex: 1 }}>
+        <h3>Chat</h3>
 
-      <div
-        ref={messagesRef}
-        style={{
-          height: 300,
-          overflowY: "auto",
-          border: "1px solid #ddd",
-          padding: 10,
-        }}
-      >
-        {messages.map((m, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 12, color: "#555" }}>
-              {m.from === user._id ? "Você" : m.fromName || m.from}
+        <div
+          style={{
+            height: 300,
+            overflowY: "auto",
+            border: "1px solid #aaa",
+            padding: 10,
+          }}
+        >
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              style={{
+                textAlign: msg.from === user._id ? "right" : "left",
+                margin: 5,
+              }}
+            >
+              {msg.message}
             </div>
-            <div>{m.text}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          style={{ flex: 1, padding: 8 }}
-          placeholder={
-            selectedUser
-              ? "Digite a mensagem..."
-              : "Selecione um usuário primeiro"
-          }
-        />
-        <button onClick={handleSend}>Enviar</button>
+        <div style={{ marginTop: 10 }}>
+          <input
+            style={{ width: "70%" }}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Mensagem..."
+          />
+          <button onClick={handleSend}>Enviar</button>
+        </div>
       </div>
     </div>
-  </div>
-</div>
-
-);
+  );
 }
